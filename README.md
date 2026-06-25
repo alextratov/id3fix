@@ -20,7 +20,7 @@ pip install mutagen
 
 ## `id3fix.py`
 
-This script reads ID3 tags from MP3 files, attempts to repair common mojibake patterns, and normalizes all text frames to UTF-8.
+This script reads ID3 tags from MP3 files and normalizes all text frames to UTF-8.
 
 ### Usage
 
@@ -34,9 +34,7 @@ This script reads ID3 tags from MP3 files, attempts to repair common mojibake pa
 
 ### Behavior
 
-- Repairs common mojibake encodings such as CP1251, CP1252, KOI8-R/U, and others.
-- Sets ID3 text frame encoding to UTF-8 for repaired frames and for frames that are not already UTF-8.
-- Prints a success marker for fixed files and notes when no changes were needed.
+- Repairs mojibake encodings CP1251.
 
 ## `id3batch.sh`
 
