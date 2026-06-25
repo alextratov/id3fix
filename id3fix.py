@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fix CP1251 encoded ID3 tags to UTF-8 in MP3 files
+Fix malformed or non-UTF-8 ID3 tags to UTF-8 in MP3 files
 """
 import os
 import sys
@@ -80,14 +80,24 @@ def fix_encoding(filepath):
             if not hasattr(frame, 'text'):
                 continue
 
+            frame_modified = False
             for i, text_value in enumerate(frame.text):
                 text_str = str(text_value)
                 repaired_text = repair_mojibake_text(text_str)
 
                 if repaired_text is not None:
                     frame.text[i] = repaired_text
-                    frame.encoding = 3  # UTF-8 encoding
+                    frame_modified = True
+
+            if frame_modified:
+                modified = True
+
+            if hasattr(frame, 'encoding') and getattr(frame, 'encoding', None) != 3:
+                try:
+                    frame.encoding = 3
                     modified = True
+                except Exception:
+                    pass
 
         if modified:
             tags.save()
@@ -99,7 +109,7 @@ def fix_encoding(filepath):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Fix CP1251 encoded ID3 tags to UTF-8 in MP3 files',
+        description='Fix malformed or non-UTF-8 ID3 tags and normalize them to UTF-8 in MP3 files',
         epilog='Examples:\n  id3fix.py -f song.mp3\n  id3fix.py -f track1.mp3 track2.mp3 track3.mp3',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
