@@ -7,16 +7,27 @@ A small utility to repair malformed ID3 tags in MP3 files and normalize text fra
 - `id3fix.py` — repairs mojibake or non-UTF-8 ID3 text tags in one or more MP3 files and writes UTF-8 text frames.
 - `id3batch.sh` — recursively finds MP3 files in a directory and runs `id3fix.py` on each one.
 
-## Requirements
+## Installation
 
-- Python 3
-- `mutagen` Python package
-
-Install `mutagen` with:
+1. Install Python 3 if it is not already installed.
+2. Install the `mutagen` package:
 
 ```bash
 pip install mutagen
 ```
+
+3. Make the scripts executable if needed:
+
+```bash
+chmod +x id3fix.py id3batch.sh
+```
+
+4. Optionally add the repository directory to your `PATH` or invoke the scripts with `./`.
+
+## Requirements
+
+- Python 3
+- `mutagen` Python package
 
 ## `id3fix.py`
 
