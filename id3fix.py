@@ -5,56 +5,95 @@ Fix CP1251 encoded ID3 tags to UTF-8 in MP3 files
 import os
 import sys
 import argparse
+import unicodedata
 from pathlib import Path
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK, TDRC, COMM
+from mutagen.id3 import ID3
+
+def text_quality_score(text):
+    score = 0
+    for ch in text:
+        if ch == '�':
+            score -= 10
+            continue
+
+        category = unicodedata.category(ch)
+        if category.startswith('C'):
+            score -= 5
+        elif ch.isalpha():
+            score += 2
+        elif ch.isdigit() or ch.isspace():
+            score += 1
+        elif category.startswith(('P', 'S')):
+            score += 1
+        elif ord(ch) >= 0x80:
+            score += 1
+        else:
+            score += 1
+    return score
+
+
+MOJIBAKE_REPAIR_CANDIDATES = [
+    ('latin-1', 'cp1251'),
+    ('cp1252', 'cp1251'),
+    ('latin-1', 'cp1252'),
+    ('cp1251', 'cp1252'),
+    ('latin-1', 'utf-8'),
+    ('cp1252', 'utf-8'),
+    ('cp1251', 'utf-8'),
+    ('latin-1', 'koi8-r'),
+    ('latin-1', 'koi8-u'),
+    ('latin-1', 'cp866'),
+]
+
+
+def repair_mojibake_text(text):
+    if not text or text.isascii():
+        return None
+
+    original_score = text_quality_score(text)
+    best_text = text
+    best_score = original_score
+
+    for source_enc, target_enc in MOJIBAKE_REPAIR_CANDIDATES:
+        try:
+            candidate = text.encode(source_enc).decode(target_enc)
+        except (UnicodeEncodeError, UnicodeDecodeError, LookupError):
+            continue
+
+        candidate_score = text_quality_score(candidate)
+        if candidate_score > best_score:
+            best_text = candidate
+            best_score = candidate_score
+
+    if best_text != text and best_score >= original_score + 3:
+        return best_text
+    return None
+
 
 def fix_encoding(filepath):
-    """Convert CP1251 ID3 tags to UTF-8 in a single MP3 file"""
+    """Convert malformed ID3 tags to UTF-8 in a single MP3 file"""
     try:
         tags = ID3(filepath)
         modified = False
-        
-        # Map of ID3 frame types to TextFrame constructors
-        text_frames = {
-            'TIT2': TIT2,  # Title
-            'TPE1': TPE1,  # Artist
-            'TPE2': None,  # Album artist (generic)
-            'TALB': TALB,  # Album
-            'TDRC': TDRC,  # Date
-            'TIT3': None,  # Subtitle
-            'TPE3': None,  # Conductor
-            'TPE4': None,  # Remixer
-            'TEXT': None,  # Text writer
-            'TCON': None,  # Content type
-            'COMM': COMM,  # Comments
-        }
-        
+
         for frame_id, frame in list(tags.items()):
             if not hasattr(frame, 'text'):
                 continue
-                
-            # Try to detect and fix UTF-8 mojibake
+
             for i, text_value in enumerate(frame.text):
                 text_str = str(text_value)
-                
-                # Check if it looks like mojibake (CP1251 interpreted as Latin-1)
-                # CP1251 Cyrillic in 0xC0-0xFF range interpreted as Latin-1 display as mojibake
-                if any(ord(c) in range(0x00C0, 0x0100) for c in text_str):
-                    try:
-                        # Encode as Latin-1 (which gives us the raw CP1251 bytes), then decode as CP1251
-                        fixed_text = text_str.encode('latin-1').decode('cp1251')
-                        frame.text[i] = fixed_text
-                        frame.encoding = 3  # UTF-8 encoding
-                        modified = True
-                    except (UnicodeDecodeError, UnicodeEncodeError):
-                        pass
-        
+                repaired_text = repair_mojibake_text(text_str)
+
+                if repaired_text is not None:
+                    frame.text[i] = repaired_text
+                    frame.encoding = 3  # UTF-8 encoding
+                    modified = True
+
         if modified:
             tags.save()
             return True, "Fixed"
-        else:
-            return False, "Already UTF-8"
-            
+        return True, "No changes needed"
+
     except Exception as e:
         return False, str(e)
 
@@ -96,10 +135,13 @@ def main():
             continue
         
         success, msg = fix_encoding(str(filepath))
-        
+
         if success:
-            print(f"✓ {filepath.name}")
-            fixed_count += 1
+            if msg == "Fixed":
+                print(f"✓ {filepath.name}")
+                fixed_count += 1
+            else:
+                print(f"• {filepath.name}: {msg}")
         else:
             print(f"✗ {filepath.name}: {msg}")
             error_count += 1
