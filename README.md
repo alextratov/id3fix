@@ -46,6 +46,7 @@ This script reads ID3 tags from MP3 files, attempts to repair common mojibake pa
 ### Behavior
 
 - Repairs common mojibake encodings such as CP1251, CP1252, KOI8-R/U, and others.
+- Includes explicit support for CP1251->UTF-8 mojibake repair, which is common for Cyrillic tags that were decoded incorrectly.
 - Sets ID3 text frame encoding to UTF-8 for repaired frames and for frames that are not already UTF-8.
 - Prints a success marker for fixed files and notes when no changes were needed.
 

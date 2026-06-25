@@ -2,6 +2,7 @@
 """
 Fix malformed or non-UTF-8 ID3 tags to UTF-8 in MP3 files
 """
+import codecs
 import os
 import sys
 import argparse
@@ -32,6 +33,24 @@ def text_quality_score(text):
     return score
 
 
+def contains_cyrillic(text):
+    for ch in text:
+        try:
+            if 'CYRILLIC' in unicodedata.name(ch):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def looks_like_cp1251_mojibake(text):
+    if len(text) < 6:
+        return False
+    marker_chars = set('РСТНМБПДВКЗШАЮЫАОЭЯЁ')
+    marker_count = sum(1 for ch in text if ch in marker_chars)
+    return marker_count >= max(3, len(text) * 0.2)
+
+
 MOJIBAKE_REPAIR_CANDIDATES = [
     ('latin-1', 'cp1251'),
     ('cp1252', 'cp1251'),
@@ -46,6 +65,40 @@ MOJIBAKE_REPAIR_CANDIDATES = [
 ]
 
 
+_SINGLE_BYTE_REVERSE_CACHE = {}
+
+def reverse_single_byte_encoding(text, encoding):
+    if encoding not in _SINGLE_BYTE_REVERSE_CACHE:
+        decode_table = bytes(range(256)).decode(encoding, errors='replace')
+        reverse_map = {}
+        for i, ch in enumerate(decode_table):
+            if ch not in reverse_map:
+                reverse_map[ch] = i
+        _SINGLE_BYTE_REVERSE_CACHE[encoding] = reverse_map
+
+    reverse_map = _SINGLE_BYTE_REVERSE_CACHE[encoding]
+    encoded_bytes = bytearray()
+    for ch in text:
+        if ch in reverse_map:
+            encoded_bytes.append(reverse_map[ch])
+        else:
+            # Preserve unknown characters as question mark bytes.
+            encoded_bytes.append(0x3f)
+    return bytes(encoded_bytes)
+
+
+def encode_text(text, encoding):
+    try:
+        return text.encode(encoding)
+    except UnicodeEncodeError:
+        try:
+            return reverse_single_byte_encoding(text, encoding)
+        except LookupError:
+            encoder = codecs.getencoder(encoding)
+            encoded, _ = encoder(text, 'replace')
+            return encoded
+
+
 def repair_mojibake_text(text):
     if not text or text.isascii():
         return None
@@ -56,7 +109,7 @@ def repair_mojibake_text(text):
 
     for source_enc, target_enc in MOJIBAKE_REPAIR_CANDIDATES:
         try:
-            candidate = text.encode(source_enc).decode(target_enc)
+            candidate = encode_text(text, source_enc).decode(target_enc)
         except (UnicodeEncodeError, UnicodeDecodeError, LookupError):
             continue
 
@@ -64,6 +117,10 @@ def repair_mojibake_text(text):
         if candidate_score > best_score:
             best_text = candidate
             best_score = candidate_score
+
+        # If the text clearly looks like cp1251 mojibake, prefer the cp1251->utf-8 repair.
+        if source_enc == 'cp1251' and target_enc == 'utf-8' and contains_cyrillic(candidate):
+            return candidate
 
     if best_text != text and best_score >= original_score + 3:
         return best_text
